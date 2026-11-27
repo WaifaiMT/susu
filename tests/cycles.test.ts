@@ -184,13 +184,14 @@ describe("starting a cycle", () => {
 
   it("locks the rules and the order in the app", async () => {
     const { collector, members, cycle } = await startedGroup();
+    // Functions, not promises: each attempt runs only when it's checked
     for (const attempt of [
-      moveMember(collector, cycle.id, members[0].userId, "up"),
-      shuffleOrder(collector, cycle.id),
-      discardDraft(collector, cycle.id),
-      startCycle(collector, cycle.id, TODAY),
+      () => moveMember(collector, cycle.id, members[0].userId, "up"),
+      () => shuffleOrder(collector, cycle.id),
+      () => discardDraft(collector, cycle.id),
+      () => startCycle(collector, cycle.id, TODAY),
     ]) {
-      await expect(attempt).rejects.toMatchObject({ code: "conflict" });
+      await expect(attempt()).rejects.toMatchObject({ code: "conflict" });
     }
   });
 });
