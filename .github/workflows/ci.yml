@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: saas
+          POSTGRES_PASSWORD: saas
+          POSTGRES_DB: susu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saas"
+          --health-interval 2s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://saas:saas@localhost:5432/susu
+      TEST_DATABASE_URL: postgres://saas:saas@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Tests (real PostgreSQL)
+        run: npm test
+      - name: Migrations and seed run cleanly, twice
+        run: |
+          npm run db:migrate && npm run db:seed
+          npm run db:migrate && npm run db:seed
+      - run: npm run build
