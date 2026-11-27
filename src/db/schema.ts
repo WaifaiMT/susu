@@ -51,6 +51,26 @@ export const invites = pgTable("invites", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const paymentReferences = pgTable(
+  "payment_references",
+  {
+    provider: text("provider").notNull(),
+    reference: text("reference").notNull(),
+    organizationId: uuid("organization_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.provider, t.reference] })],
+);
+
+export const webhookEvents = pgTable("webhook_events", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  provider: text("provider").notNull(),
+  eventKey: text("event_key").notNull(),
+  reference: text("reference"),
+  outcome: text("outcome").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const auditLog = pgTable("audit_log", {
   id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
   organizationId: uuid("organization_id").notNull(),
@@ -101,6 +121,53 @@ export const rounds = pgTable("rounds", {
   dueOn: date("due_on").notNull(),
   recipientUserId: uuid("recipient_user_id").notNull(),
   status: text("status").$type<RoundStatus>().notNull().default("open"),
+});
+
+export type ContributionMethod = "momo" | "cash";
+export type ContributionStatus = "pending" | "otp_required" | "succeeded" | "duplicate" | "mismatch" | "failed" | "expired";
+export type MomoNetwork = "mtn" | "telecel" | "at";
+
+export const contributions = pgTable("contributions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  roundId: uuid("round_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  amountPesewas: bigint("amount_pesewas", { mode: "number" }).notNull(),
+  method: text("method").$type<ContributionMethod>().notNull(),
+  provider: text("provider"),
+  reference: text("reference").notNull(),
+  phone: text("phone"),
+  network: text("network").$type<MomoNetwork>(),
+  status: text("status").$type<ContributionStatus>().notNull(),
+  receivedPesewas: bigint("received_pesewas", { mode: "number" }),
+  failureReason: text("failure_reason"),
+  recordedBy: uuid("recorded_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+});
+
+export const ledgerAccounts = pgTable("ledger_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type LedgerKind = "contribution" | "refund_due";
+
+export const ledgerTransactions = pgTable("ledger_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  kind: text("kind").$type<LedgerKind>().notNull(),
+  sourceId: uuid("source_id").notNull(),
+  memo: text("memo").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const ledgerEntries = pgTable("ledger_entries", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  transactionId: uuid("transaction_id").notNull(),
+  accountId: uuid("account_id").notNull(),
+  amountPesewas: bigint("amount_pesewas", { mode: "number" }).notNull(),
+  memberUserId: uuid("member_user_id"),
 });
 
 export type Role = "collector" | "treasurer" | "member";

@@ -15,6 +15,7 @@ import { formatCedis } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { FREQUENCY_LABELS, formatDay, todayIso } from "@/lib/schedule";
 import { getOpenCycle, type CycleView } from "@/lib/services/cycles";
+import { MyContribution, RefundsAlert, RoundPayments, loadPayments, paidCountFor } from "./payments";
 import { listMembers } from "@/lib/services/members";
 import type { OrgContext } from "@/lib/services/orgs";
 
@@ -37,7 +38,7 @@ async function Cycle({ params }: { params: Promise<{ slug: string }> }) {
 
   if (!view) return <NoCycle ctx={ctx} slug={slug} />;
   if (view.cycle.status === "draft") return <DraftCycle ctx={ctx} slug={slug} view={view} />;
-  return <ActiveCycle ctx={ctx} view={view} />;
+  return <ActiveCycle ctx={ctx} slug={slug} view={view} />;
 }
 
 // ---- No cycle yet ----------------------------------------------------------
@@ -215,9 +216,10 @@ const STATUS_BADGE: Record<RoundStatus, { label: string; tone: "slate" | "indigo
   paid_out: { label: "Paid out", tone: "emerald" },
 };
 
-function ActiveCycle({ ctx, view }: { ctx: OrgContext; view: NonNullable<CycleView> }) {
+async function ActiveCycle({ ctx, slug, view }: { ctx: OrgContext; slug: string; view: NonNullable<CycleView> }) {
   const { cycle, rounds, currentRound, potPesewas } = view;
   const today = todayIso();
+  const { all, payable } = await loadPayments(ctx, view, today);
   const myRound = rounds.find((r) => r.recipientUserId === ctx.userId);
   const overdue = currentRound && currentRound.dueOn < today;
 
@@ -255,6 +257,10 @@ function ActiveCycle({ ctx, view }: { ctx: OrgContext; view: NonNullable<CycleVi
         </Card>
       )}
 
+      <RefundsAlert all={all} slug={slug} ctx={ctx} />
+      <MyContribution ctx={ctx} slug={slug} view={view} all={all} payable={payable} />
+      <RoundPayments ctx={ctx} slug={slug} view={view} all={all} payable={payable} />
+
       <Card title="Schedule" description="Fixed when the cycle started. Nobody can change it, including the collector.">
         <div className="-mx-5 overflow-x-auto">
           <table className="w-full min-w-[28rem] text-left text-sm">
@@ -275,7 +281,10 @@ function ActiveCycle({ ctx, view }: { ctx: OrgContext; view: NonNullable<CycleVi
                     {r.recipientName} {r.recipientUserId === ctx.userId && <span className="font-normal text-slate-400">(you)</span>}
                   </td>
                   <td className="px-5 py-2.5">
-                    <Badge tone={STATUS_BADGE[r.status].tone}>{STATUS_BADGE[r.status].label}</Badge>
+                    <Badge tone={STATUS_BADGE[r.status].tone}>
+                      {STATUS_BADGE[r.status].label}
+                      {r.status === "open" && paidCountFor(all, r.id) > 0 ? ` · ${paidCountFor(all, r.id)}/${view.members.length}` : ""}
+                    </Badge>
                   </td>
                 </tr>
               ))}
