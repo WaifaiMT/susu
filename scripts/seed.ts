@@ -1,7 +1,9 @@
 import "dotenv/config";
 import { closePool } from "../src/db/client";
 import type { Role } from "../src/db/schema";
+import { getFakeProvider } from "../src/lib/payments";
 import { todayIso } from "../src/lib/schedule";
+import { getContributionReference, processWebhook, recordCashContribution, startContribution } from "../src/lib/services/contributions";
 import { createDraftCycle, getOpenCycle, startCycle } from "../src/lib/services/cycles";
 import { acceptInvite, createInvite } from "../src/lib/services/invites";
 import { createOrganization, getOrgContext, listUserOrganizations, type OrgContext } from "../src/lib/services/orgs";
@@ -52,6 +54,18 @@ async function main() {
   if (!(await getOpenCycle(market.ctx))) {
     const cycle = await createDraftCycle(market.ctx, { amount: "50", frequency: "weekly", startsOn: todayIso(), orderMethod: "random" });
     await startCycle(market.ctx, cycle.id);
+
+    // Round 1 under way: Ama paid with (test) MoMo, Yaw paid cash to the treasurer
+    const round1 = (await getOpenCycle(market.ctx))!.rounds[0];
+    const fake = getFakeProvider();
+    if (fake) {
+      const paid = await startContribution(market.ctx, { roundId: round1.id, phone: "024 123 4567" });
+      const { reference } = await getContributionReference(market.ctx, paid.contributionId);
+      fake.settle(reference, "success");
+      await processWebhook("fake", fake.webhookFor(reference));
+    }
+    const kofiCtx = (await getOrgContext(kofi.id, market.ctx.org.slug))!;
+    await recordCashContribution(kofiCtx, { roundId: round1.id, userId: yaw.id });
   }
 
   // A monthly teachers' susu that's still being set up

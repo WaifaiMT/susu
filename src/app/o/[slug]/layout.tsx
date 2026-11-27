@@ -29,6 +29,7 @@ async function OrgHeader({ params }: { params: Promise<{ slug: string }> }) {
   const links = [
     { href: base, label: "Cycle" },
     { href: `${base}/members`, label: "Members" },
+    ...(can(role, "ledger:read") ? [{ href: `${base}/ledger`, label: "Ledger" }] : []),
     ...(can(role, "audit:read") ? [{ href: `${base}/audit`, label: "Audit log" }] : []),
     ...(can(role, "org:update") ? [{ href: `${base}/settings`, label: "Settings" }] : []),
   ];

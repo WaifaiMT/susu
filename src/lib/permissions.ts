@@ -3,11 +3,13 @@ import { AppError } from "./errors";
 
 // One map for every permission check. Roles in a susu group:
 //   collector  runs the group: sets the rules, the payout order, starts cycles
-//   treasurer  helps run it: invites members, sees the audit log, can't change the rules
+//   treasurer  helps run it: invites members, records cash, reads the ledger, can't change the rules
 //   member     pays in, gets paid out, sees the group's progress
 export const PERMISSIONS = {
   "cycles:read": ["collector", "treasurer", "member"],
   "cycles:manage": ["collector"],
+  "contributions:record_cash": ["collector", "treasurer"],
+  "ledger:read": ["collector", "treasurer"],
   "members:read": ["collector", "treasurer", "member"],
   "members:invite": ["collector", "treasurer"],
   "members:manage": ["collector", "treasurer"],
