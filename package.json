@@ -17,7 +17,7 @@
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.4",
     "next": "16.4.6",
-    "pesewa": "github:WaifaiMT/pesewa#6ee551564ae2e192c1400f456c957a162dafe44f",
+    "pesewa": "^0.2.0",
     "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
