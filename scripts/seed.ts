@@ -1,10 +1,8 @@
-import { processWebhook } from "../src/lib/services/webhooks";
 import "dotenv/config";
 import { closePool } from "../src/db/client";
 import type { Role } from "../src/db/schema";
-import { getFakeProvider } from "../src/lib/payments";
 import { todayIso } from "../src/lib/schedule";
-import { getContributionReference, recordCashContribution, startContribution } from "../src/lib/services/contributions";
+import { recordCashContribution } from "../src/lib/services/contributions";
 import { createDraftCycle, getOpenCycle, startCycle } from "../src/lib/services/cycles";
 import { getPayoutAccount, setPayoutAccount } from "../src/lib/services/payouts";
 import { acceptInvite, createInvite } from "../src/lib/services/invites";
@@ -57,17 +55,13 @@ async function main() {
     const cycle = await createDraftCycle(market.ctx, { amount: "50", frequency: "weekly", startsOn: todayIso(), orderMethod: "random" });
     await startCycle(market.ctx, cycle.id);
 
-    // Round 1 under way: Ama paid with (test) MoMo, Yaw paid cash to the treasurer
+    // Round 1 under way: Ama and Yaw paid cash to the treasurer. Not MoMo: the
+    // test provider keeps its state in the app's memory, so a payment made from
+    // this script would be unknown to the running app, and reconciliation would
+    // rightly flag it. Pay by MoMo in the app to see that flow.
     const round1 = (await getOpenCycle(market.ctx))!.rounds[0];
-    const fake = getFakeProvider();
-    if (fake) {
-      const paid = await startContribution(market.ctx, { roundId: round1.id, phone: "024 123 4567" });
-      const { reference } = await getContributionReference(market.ctx, paid.contributionId);
-      fake.settle(reference, "success");
-      await processWebhook("fake", fake.webhookFor(reference));
-    }
     const kofiCtx = (await getOrgContext(kofi.id, market.ctx.org.slug))!;
-    await recordCashContribution(kofiCtx, { roundId: round1.id, userId: yaw.id });
+    for (const person of [ama, yaw]) await recordCashContribution(kofiCtx, { roundId: round1.id, userId: person.id });
   }
 
   // Payout numbers: everyone but Efua, so the "no payout number yet" warning has someone to show
