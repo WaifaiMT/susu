@@ -15,6 +15,8 @@ import { formatDay } from "@/lib/schedule";
 import { listCycleContributions, payableRoundIds } from "@/lib/services/contributions";
 import type { CycleView } from "@/lib/services/cycles";
 import type { OrgContext } from "@/lib/services/orgs";
+import type { listCyclePayouts, listPayoutAccountHints } from "@/lib/services/payouts";
+import { RoundPayoutPanel } from "./payouts";
 
 type View = NonNullable<CycleView>;
 type Contribution = Awaited<ReturnType<typeof listCycleContributions>>[number];
@@ -160,12 +162,16 @@ export function RoundPayments({
   view,
   all,
   payable,
+  payouts,
+  hints,
 }: {
   ctx: OrgContext;
   slug: string;
   view: View;
   all: Contribution[];
   payable: string[];
+  payouts: Awaited<ReturnType<typeof listCyclePayouts>>;
+  hints: Awaited<ReturnType<typeof listPayoutAccountHints>>;
 }) {
   const canRecordCash = can(ctx.role, "contributions:record_cash");
   const shown = view.rounds.filter((r) => payable.includes(r.id) || r.status === "full");
@@ -220,6 +226,7 @@ export function RoundPayments({
                 );
               })}
             </ul>
+            <RoundPayoutPanel slug={slug} ctx={ctx} view={view} roundId={round.id} all={payouts} hints={hints} />
           </Card>
         );
       })}

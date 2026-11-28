@@ -1,9 +1,10 @@
+import { processWebhook } from "@/lib/services/webhooks";
 import { sql } from "drizzle-orm";
 import type { CollectRequest, CollectResult, MobileMoneyProvider } from "pesewa";
 import { withTenant } from "@/db/tenant";
 import { getFakeProvider } from "@/lib/payments";
 import { FakeProvider } from "@/lib/payments/fake";
-import { processWebhook, startContribution } from "@/lib/services/contributions";
+import { startContribution } from "@/lib/services/contributions";
 import { createDraftCycle, getOpenCycle, startCycle } from "@/lib/services/cycles";
 import type { OrgContext } from "@/lib/services/orgs";
 import { makeGroup } from "./helpers";

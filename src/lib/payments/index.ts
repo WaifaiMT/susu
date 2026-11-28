@@ -1,4 +1,4 @@
-import { MtnMomo, Paystack, type MobileMoneyProvider } from "pesewa";
+import { MtnMomo, Paystack, isPayoutProvider, type MobileMoneyProvider, type PayoutProvider } from "pesewa";
 import { FakeProvider } from "./fake";
 
 // Which payment provider Susu talks to, from PAYMENTS_PROVIDER:
@@ -54,12 +54,21 @@ function build(name: ProviderName): MobileMoneyProvider {
     case "mtn_momo": {
       const environment = process.env.MTN_MOMO_ENVIRONMENT?.trim() || "sandbox";
       if (environment !== "sandbox") throw new PaymentConfigError("Susu only runs on the MTN MoMo sandbox.");
+      const disbursementKey = process.env.MTN_MOMO_DISBURSEMENT_SUBSCRIPTION_KEY?.trim();
       return new MtnMomo({
         subscriptionKey: required("MTN_MOMO_SUBSCRIPTION_KEY"),
         apiUser: required("MTN_MOMO_API_USER"),
         apiKey: required("MTN_MOMO_API_KEY"),
         environment,
         callbackUrl: `${appUrl()}/api/webhooks/mtn_momo`,
+        // Payouts need MTN's separate Disbursement product; without it, pots go out in cash
+        disbursement: disbursementKey
+          ? {
+              subscriptionKey: disbursementKey,
+              apiUser: required("MTN_MOMO_DISBURSEMENT_API_USER"),
+              apiKey: required("MTN_MOMO_DISBURSEMENT_API_KEY"),
+            }
+          : undefined,
       });
     }
   }
@@ -78,6 +87,15 @@ export function getProvider(name: string = configuredProviderName()): MobileMone
     cache.set(key, provider);
   }
   return provider;
+}
+
+/** The configured provider, if it can send payouts. */
+export function getPayoutProvider(name: string = configuredProviderName()): (MobileMoneyProvider & PayoutProvider) | null {
+  const provider = getProvider(name);
+  if (!isPayoutProvider(provider)) return null;
+  // MTN only pays out when its Disbursement keys are configured
+  if (provider.name === "mtn_momo" && !process.env.MTN_MOMO_DISBURSEMENT_SUBSCRIPTION_KEY?.trim()) return null;
+  return provider as MobileMoneyProvider & PayoutProvider;
 }
 
 export function getFakeProvider(): FakeProvider | null {

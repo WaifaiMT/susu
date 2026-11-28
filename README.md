@@ -26,7 +26,10 @@ It runs on trust, so arguments start when the rules move: "the amount was GH₵ 
 | **Mobile Money contributions** | Members pay their round with MoMo through [pesewa](https://github.com/WaifaiMT/pesewa): a prompt on their phone, or an OTP step, then a verified webhook. A built-in **test provider** runs everything with no keys; Paystack test mode and the MTN MoMo sandbox work too. Live keys are refused |
 | **Cash** | Collectors and treasurers record cash contributions, which count towards the round like MoMo ones |
 | **Double-entry ledger** | Every cedi in is two entries that sum to zero, checked by the database at commit. Append-only: mistakes are corrected with new entries, never edits |
-| **Paid twice, or the wrong amount** | The money is booked as **owed back**, not lost and not counted towards the round |
+| **Paid twice, or the wrong amount** | The money is booked as **owed back**, not lost and not counted towards the round, and refunded by MoMo to the number it came from |
+| **Payouts** | When a round is full, the collector sends the pot by MoMo (Paystack Transfers, MTN Disbursement, or the test provider) or records it as paid in cash. A pot can't go out twice, and a reversed payout puts the round back to "full" |
+| **Payout numbers** | Each member sets their own. The collector can see one is set (last digits only) but can't change it, so a pot can't be quietly redirected |
+| **Reconciliation** | Checks every payment and payout with the provider, catches up anything a lost webhook missed, flags disagreements, and checks the ledger against the records. From the Ledger page, or `npm run reconcile` as a daily job |
 | **Audit log** | Every draft, reorder, start, payment and cash entry is recorded in the same transaction as the change |
 | **Invites** | Single-use, expiring links tied to an email, stored hashed |
 
@@ -90,16 +93,34 @@ The ledger, in pesewas (debits positive, credits negative):
 | GH₵ 50 by MoMo for round 3 | `clearing:<provider>` +5000 · `round:3` −5000 |
 | GH₵ 50 in cash for round 3 | `cash` +5000 · `round:3` −5000 |
 | Paid twice, or GH₵ 40 instead of 50 | `clearing:<provider>` +amount · `refunds_due` −amount |
+| Round 3's GH₵ 250 pot sent by MoMo | `round:3` +25000 · `clearing:<provider>` −25000 |
+| …and the wallet reversed it | `clearing:<provider>` +25000 · `round:3` −25000 (round back to full) |
+| Cash moved into the provider balance | `clearing:<provider>` +amount · `cash` −amount |
 
 **Nothing is counted twice.** A duplicate webhook hits `UNIQUE (provider, event_key)` and is ignored; the contribution row is locked and its status checked; and the ledger allows one posting per source (`UNIQUE (kind, source_id)`). The round row is locked while payments are counted, so when the last two members pay at the same moment, the round is still marked full. Two tabs can't send two prompts: only one attempt per member can be waiting (a partial unique index).
 
 [`tests/contributions.test.ts`](tests/contributions.test.ts) covers each of these, and [`tests/ledger.test.ts`](tests/ledger.test.ts) runs random mixes of payments, declines, duplicate webhooks, wrong amounts and cash, checking after every step that the books balance and match the contributions.
 
+### Payouts can't go out twice
+
+A payout row (with a fresh UUID reference) is committed **before** the provider is called, and every retry reuses that reference; providers refuse a reference they've already seen. A payout is only marked failed when the provider says so or refused the request outright: a timeout leaves it **pending**, because the money may have gone, and "Check status" or reconciliation finds out. Meanwhile no second payout can start:
+
+| Guard | Where |
+|---|---|
+| At most one pending-or-succeeded payout per round (and per refund) | Partial unique index on `payouts` |
+| A round is `paid_out` only from `full`, with a succeeded payout on record; it reopens only if that payout was reversed | `rounds_guard` trigger |
+| A payout's amount, destination and reference never change; failed and reversed are final | `payouts_guard` trigger |
+| Payouts in a group are serialised, so two can't spend the same balance | Advisory lock |
+| MoMo payouts can't exceed what's held at the provider, minus payouts in flight | Checked before sending |
+| A cycle closes only when every round is paid out | `cycles_guard` trigger |
+
+[`tests/payouts.test.ts`](tests/payouts.test.ts) presses the button twice at once, times out a payout that actually went through, reverses one, loses webhooks for reconciliation to find, and runs random mixes of everything checking the books after every step.
+
 ## Roadmap
 
 - [x] **Week 1:** groups, roles, drafting and starting cycles, the locked schedule
 - [x] **Week 2:** contributions with Mobile Money ([pesewa](https://github.com/WaifaiMT/pesewa): test provider, Paystack test mode, MTN MoMo sandbox), cash, verified webhooks, a **double-entry ledger**
-- [ ] **Week 3:** payouts that can't happen twice, failed and reversed transfers, daily **reconciliation** against the provider
+- [x] **Week 3:** payouts that can't happen twice, refunds, failed and reversed transfers, cash deposits, closing a cycle, **reconciliation** against the provider
 - [ ] **Week 4:** demo data, screenshots, and a wiki: architecture, how money moves, idempotency, threat model, what broke
 
 Work is tracked in [issues](https://github.com/WaifaiMT/susu/issues).
@@ -120,7 +141,7 @@ Sign in as `ama@example.com` (collector of the running group) or `kofi@example.c
 
 ### Payments in development
 
-By default Susu uses its **built-in test provider** (`PAYMENTS_PROVIDER=fake`): no keys, nothing charged. After you pay, the page shows **Simulate: approve on phone** and **Simulate: decline**, which send a signed webhook through the same code path a real provider's would. Test numbers: ending `0000` is declined, ending `1111` asks for an OTP (`123456`).
+By default Susu uses its **built-in test provider** (`PAYMENTS_PROVIDER=fake`): no keys, nothing charged. After you pay, the page shows **Simulate: approve on phone** and **Simulate: decline**, which send a signed webhook through the same code path a real provider's would. Test numbers: ending `0000` is declined, ending `1111` asks for an OTP (`123456`). Payouts work the same way (**Simulate: provider confirms** / **wallet rejects**), and a payout number ending `0000` is rejected. Run **Reconcile now** on the Ledger page to see it catch up anything you didn't simulate a webhook for.
 
 To try a real provider's test environment, set `PAYMENTS_PROVIDER=paystack` with a `sk_test_` key, or `mtn_momo` with sandbox keys (see `.env.example`). Webhooks go to `/api/webhooks/<provider>`; on a laptop, a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) gives you a public URL for the provider's dashboard.
 
@@ -138,7 +159,9 @@ public schema (shared)                 org_<id> schema (one per group)
 ├── organizations (groups)             ├── cycle_members   who's in, payout position
 ├── memberships (role)                 ├── rounds          due date, recipient, status
 ├── invites                            ├── contributions   every payment attempt
-├── audit_log                          ├── ledger_accounts, ledger_transactions, ledger_entries
+├── audit_log                          ├── payouts, payout_accounts, cash_deposits
+│                                      ├── reconciliation_runs
+│                                      ├── ledger_accounts, ledger_transactions, ledger_entries
 ├── payment_references (→ group)       └── _migrations
 └── webhook_events (each once)
 ```

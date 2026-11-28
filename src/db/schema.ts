@@ -152,7 +152,7 @@ export const ledgerAccounts = pgTable("ledger_accounts", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export type LedgerKind = "contribution" | "refund_due";
+export type LedgerKind = "contribution" | "refund_due" | "payout" | "payout_reversal" | "refund" | "refund_reversal" | "cash_deposit";
 
 export const ledgerTransactions = pgTable("ledger_transactions", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -169,5 +169,65 @@ export const ledgerEntries = pgTable("ledger_entries", {
   amountPesewas: bigint("amount_pesewas", { mode: "number" }).notNull(),
   memberUserId: uuid("member_user_id"),
 });
+
+export const payoutAccounts = pgTable("payout_accounts", {
+  userId: uuid("user_id").primaryKey(),
+  phone: text("phone").notNull(),
+  network: text("network").$type<MomoNetwork>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PayoutKind = "round" | "refund";
+export type PayoutRowStatus = "pending" | "succeeded" | "failed" | "reversed";
+
+export const payouts = pgTable("payouts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  kind: text("kind").$type<PayoutKind>().notNull(),
+  roundId: uuid("round_id"),
+  contributionId: uuid("contribution_id"),
+  recipientUserId: uuid("recipient_user_id").notNull(),
+  amountPesewas: bigint("amount_pesewas", { mode: "number" }).notNull(),
+  method: text("method").$type<ContributionMethod>().notNull(),
+  provider: text("provider"),
+  reference: text("reference").notNull(),
+  phone: text("phone"),
+  network: text("network").$type<MomoNetwork>(),
+  status: text("status").$type<PayoutRowStatus>().notNull(),
+  failureReason: text("failure_reason"),
+  initiatedBy: uuid("initiated_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+});
+
+export const cashDeposits = pgTable("cash_deposits", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  provider: text("provider").notNull(),
+  amountPesewas: bigint("amount_pesewas", { mode: "number" }).notNull(),
+  note: text("note").notNull().default(""),
+  recordedBy: uuid("recorded_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const reconciliationRuns = pgTable("reconciliation_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  provider: text("provider").notNull(),
+  ranAt: timestamp("ran_at", { withTimezone: true }).notNull().defaultNow(),
+  ranBy: uuid("ran_by"),
+  checked: integer("checked").notNull(),
+  matched: integer("matched").notNull(),
+  fixed: integer("fixed").notNull(),
+  problems: integer("problems").notNull(),
+  report: jsonb("report").$type<ReconciliationItem[]>().notNull(),
+});
+
+export type ReconciliationItem = {
+  kind: "contribution" | "payout" | "ledger";
+  reference: string;
+  ours: string;
+  theirs: string;
+  /** matched: agrees · fixed: we were behind and caught up · problem: needs a person */
+  result: "matched" | "fixed" | "problem";
+  note?: string;
+};
 
 export type Role = "collector" | "treasurer" | "member";

@@ -14,8 +14,9 @@ import { requireOrg } from "@/lib/auth/session";
 import { formatCedis } from "@/lib/money";
 import { can } from "@/lib/permissions";
 import { FREQUENCY_LABELS, formatDay, todayIso } from "@/lib/schedule";
-import { getOpenCycle, type CycleView } from "@/lib/services/cycles";
+import { getOpenCycle, listClosedCycles, type CycleView } from "@/lib/services/cycles";
 import { MyContribution, RefundsAlert, RoundPayments, loadPayments, paidCountFor } from "./payments";
+import { CloseCycle, MyPayout, loadPayouts } from "./payouts";
 import { listMembers } from "@/lib/services/members";
 import type { OrgContext } from "@/lib/services/orgs";
 
@@ -44,11 +45,35 @@ async function Cycle({ params }: { params: Promise<{ slug: string }> }) {
 // ---- No cycle yet ----------------------------------------------------------
 
 async function NoCycle({ ctx, slug }: { ctx: OrgContext; slug: string }) {
+  const closed = await listClosedCycles(ctx);
+  const past =
+    closed.length > 0 ? (
+      <Card title="Past cycles">
+        <ul className="divide-y divide-slate-100 text-sm">
+          {closed.map((c) => (
+            <li key={c.id} className="flex justify-between gap-3 py-2">
+              <span className="text-slate-700">
+                Cycle {c.number}: {formatCedis(c.amountPesewas)} {FREQUENCY_LABELS[c.frequency].toLowerCase()}
+              </span>
+              <span className="text-slate-500">closed {c.closedAt ? formatDay(c.closedAt.toISOString().slice(0, 10)) : ""}</span>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    ) : null;
+
   if (!can(ctx.role, "cycles:manage")) {
     return (
-      <Card title="No cycle yet">
-        <p className="text-sm text-slate-600">Your collector hasn’t set up a cycle yet. You’ll see the payout order and dates here once they do.</p>
-      </Card>
+      <div className="space-y-6">
+        <Card title={closed.length ? "No cycle running" : "No cycle yet"}>
+          <p className="text-sm text-slate-600">
+            {closed.length
+              ? "Your collector hasn’t started the next cycle yet."
+              : "Your collector hasn’t set up a cycle yet. You’ll see the payout order and dates here once they do."}
+          </p>
+        </Card>
+        {past}
+      </div>
     );
   }
 
@@ -82,7 +107,10 @@ async function NoCycle({ ctx, slug }: { ctx: OrgContext; slug: string }) {
           <p className="mt-4 text-sm text-amber-800">You’re the only member so far. Invite people from the Members tab first.</p>
         )}
       </Card>
-      <HowItWorks />
+      <div className="space-y-6">
+        <HowItWorks />
+        {past}
+      </div>
     </div>
   );
 }
@@ -219,7 +247,7 @@ const STATUS_BADGE: Record<RoundStatus, { label: string; tone: "slate" | "indigo
 async function ActiveCycle({ ctx, slug, view }: { ctx: OrgContext; slug: string; view: NonNullable<CycleView> }) {
   const { cycle, rounds, currentRound, potPesewas } = view;
   const today = todayIso();
-  const { all, payable } = await loadPayments(ctx, view, today);
+  const [{ all, payable }, payoutData] = await Promise.all([loadPayments(ctx, view, today), loadPayouts(ctx, view)]);
   const myRound = rounds.find((r) => r.recipientUserId === ctx.userId);
   const overdue = currentRound && currentRound.dueOn < today;
 
@@ -258,8 +286,10 @@ async function ActiveCycle({ ctx, slug, view }: { ctx: OrgContext; slug: string;
       )}
 
       <RefundsAlert all={all} slug={slug} ctx={ctx} />
+      <CloseCycle slug={slug} ctx={ctx} view={view} />
       <MyContribution ctx={ctx} slug={slug} view={view} all={all} payable={payable} />
-      <RoundPayments ctx={ctx} slug={slug} view={view} all={all} payable={payable} />
+      <RoundPayments ctx={ctx} slug={slug} view={view} all={all} payable={payable} payouts={payoutData.all} hints={payoutData.hints} />
+      <MyPayout slug={slug} ctx={ctx} view={view} all={payoutData.all} myAccount={payoutData.myAccount} />
 
       <Card title="Schedule" description="Fixed when the cycle started. Nobody can change it, including the collector.">
         <div className="-mx-5 overflow-x-auto">
