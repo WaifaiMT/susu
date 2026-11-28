@@ -6,6 +6,8 @@ An open-source app for running **susu groups**: the rotating savings groups used
 
 Built with **Next.js 16, TypeScript, and PostgreSQL**. Being built in public: see the [roadmap](#roadmap).
 
+📖 **[The wiki](https://github.com/WaifaiMT/susu/wiki)** explains how it works and why: [what a susu is](https://github.com/WaifaiMT/susu/wiki/Start-Here) · [how money moves](https://github.com/WaifaiMT/susu/wiki/How-Money-Moves) · [nothing counted twice](https://github.com/WaifaiMT/susu/wiki/Idempotency) · [reconciliation](https://github.com/WaifaiMT/susu/wiki/Reconciliation) · [threat model](https://github.com/WaifaiMT/susu/wiki/Threat-Model) · [what broke](https://github.com/WaifaiMT/susu/wiki/What-Broke)
+
 > ⚠️ **A demo and learning project, not a live money service.** It runs on test and sandbox payment keys only. Collecting and holding other people's savings for real needs a licence from the Bank of Ghana.
 
 ## What a susu is
@@ -121,7 +123,7 @@ A payout row (with a fresh UUID reference) is committed **before** the provider 
 - [x] **Week 1:** groups, roles, drafting and starting cycles, the locked schedule
 - [x] **Week 2:** contributions with Mobile Money ([pesewa](https://github.com/WaifaiMT/pesewa): test provider, Paystack test mode, MTN MoMo sandbox), cash, verified webhooks, a **double-entry ledger**
 - [x] **Week 3:** payouts that can't happen twice, refunds, failed and reversed transfers, cash deposits, closing a cycle, **reconciliation** against the provider
-- [ ] **Week 4:** demo data, screenshots, and a wiki: architecture, how money moves, idempotency, threat model, what broke
+- [ ] **Week 4:** ~~wiki~~ ([done](https://github.com/WaifaiMT/susu/wiki)), screenshots, a walkthrough video
 
 Work is tracked in [issues](https://github.com/WaifaiMT/susu/issues).
 
