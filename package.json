@@ -10,13 +10,14 @@
     "typecheck": "next typegen && tsc --noEmit",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "reconcile": "tsx scripts/reconcile.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.4",
     "next": "16.4.6",
-    "pesewa": "github:WaifaiMT/pesewa#c4ced95dd48c14d3f94192bf4745e538feeda18e",
+    "pesewa": "github:WaifaiMT/pesewa#6ee551564ae2e192c1400f456c957a162dafe44f",
     "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",

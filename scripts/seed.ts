@@ -1,10 +1,12 @@
+import { processWebhook } from "../src/lib/services/webhooks";
 import "dotenv/config";
 import { closePool } from "../src/db/client";
 import type { Role } from "../src/db/schema";
 import { getFakeProvider } from "../src/lib/payments";
 import { todayIso } from "../src/lib/schedule";
-import { getContributionReference, processWebhook, recordCashContribution, startContribution } from "../src/lib/services/contributions";
+import { getContributionReference, recordCashContribution, startContribution } from "../src/lib/services/contributions";
 import { createDraftCycle, getOpenCycle, startCycle } from "../src/lib/services/cycles";
+import { getPayoutAccount, setPayoutAccount } from "../src/lib/services/payouts";
 import { acceptInvite, createInvite } from "../src/lib/services/invites";
 import { createOrganization, getOrgContext, listUserOrganizations, type OrgContext } from "../src/lib/services/orgs";
 import { authenticate, createUser, type PublicUser } from "../src/lib/services/users";
@@ -66,6 +68,13 @@ async function main() {
     }
     const kofiCtx = (await getOrgContext(kofi.id, market.ctx.org.slug))!;
     await recordCashContribution(kofiCtx, { roundId: round1.id, userId: yaw.id });
+  }
+
+  // Payout numbers: everyone but Efua, so the "no payout number yet" warning has someone to show
+  const numbers: [PublicUser, string][] = [[ama, "0244000111"], [kofi, "0201000222"], [akosua, "0554000333"], [yaw, "0264000444"]];
+  for (const [person, phone] of numbers) {
+    const ctx = (await getOrgContext(person.id, market.ctx.org.slug))!;
+    if (!(await getPayoutAccount(ctx))) await setPayoutAccount(ctx, { phone });
   }
 
   // A monthly teachers' susu that's still being set up

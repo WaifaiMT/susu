@@ -1,4 +1,5 @@
-import { processWebhook } from "@/lib/services/contributions";
+import { processWebhook } from "@/lib/services/webhooks";
+
 
 // One endpoint per provider: /api/webhooks/paystack, /api/webhooks/mtn_momo.
 // The body is read as raw text, because signatures are computed over the

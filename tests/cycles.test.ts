@@ -234,6 +234,13 @@ describe("the database enforces the rules, whatever the app does", () => {
 
   it("won't reopen a paid-out round or send a cycle back to draft", async () => {
     const { collector } = await startedGroup();
+    // A round can only be paid out from full, with a successful payout on record (0003_payouts.sql)
+    await rawSql(collector, sql`UPDATE rounds SET status = 'full' WHERE number = 1`);
+    await rawSql(
+      collector,
+      sql`INSERT INTO payouts (kind, round_id, recipient_user_id, amount_pesewas, method, reference, status)
+          SELECT 'round', id, recipient_user_id, 1000, 'cash', gen_random_uuid(), 'succeeded' FROM rounds WHERE number = 1`,
+    );
     await rawSql(collector, sql`UPDATE rounds SET status = 'paid_out' WHERE number = 1`);
     expect(await pgError(rawSql(collector, sql`UPDATE rounds SET status = 'open' WHERE number = 1`))).toBe("23514");
     expect(await pgError(rawSql(collector, sql`UPDATE cycles SET status = 'draft'`))).toBe("23514");

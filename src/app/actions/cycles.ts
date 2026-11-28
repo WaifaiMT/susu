@@ -5,16 +5,20 @@ import { runAction, type ActionState } from "@/lib/actions";
 import { requireOrg } from "@/lib/auth/session";
 import { AppError } from "@/lib/errors";
 import { getFakeProvider } from "@/lib/payments";
-import {
-  checkContribution,
-  getContributionReference,
-  processWebhook,
-  recordCashContribution,
-  startContribution,
-  submitContributionOtp,
-  type SettleOutcome,
-} from "@/lib/services/contributions";
+import { checkContribution, getContributionReference, recordCashContribution, startContribution, submitContributionOtp, type SettleOutcome } from "@/lib/services/contributions";
 import { createDraftCycle, discardDraft, moveMember, shuffleOrder, startCycle } from "@/lib/services/cycles";
+import {
+  checkPayout,
+  closeCycle,
+  getPendingPayoutReference,
+  recordCashDeposit,
+  setPayoutAccount,
+  startRefund,
+  startRoundPayout,
+  type PayoutOutcome,
+} from "@/lib/services/payouts";
+import { reconcile } from "@/lib/services/reconciliation";
+import { processWebhook } from "@/lib/services/webhooks";
 
 // Every action re-reads the session and membership on the server; the slug
 // is bound by the page, and the services check the role.
@@ -123,5 +127,88 @@ export async function simulatePaymentAction(slug: string, _prev: ActionState, fo
     // Deliver the provider's webhook through the same path a real one takes
     await processWebhook("fake", fake.webhookFor(reference));
     refresh();
+  });
+}
+
+// ---- Payouts, refunds, cash, closing, reconciliation -------------------------
+
+export async function setPayoutAccountAction(slug: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    await setPayoutAccount(await requireOrg(slug), { phone: field(form, "phone"), network: field(form, "network") || undefined });
+    refresh();
+    return "Saved. Your payout will go to this number.";
+  });
+}
+
+const PAYOUT_MESSAGES: Record<PayoutOutcome, string> = {
+  succeeded: "Paid out.",
+  failed: "The payout didn't go through. You can try again.",
+  reversed: "The payout came back from the wallet. The pot is owed again.",
+  still_pending: "Still on its way. The provider hasn't finished it yet.",
+  already_settled: "This payout is already up to date.",
+  needs_attention: "Our record and the provider's disagree. It's in the audit log: check before doing anything else.",
+  unknown_reference: "The provider doesn't know this payout.",
+};
+
+export async function startPayoutAction(slug: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const method = field(form, "method") === "cash" ? "cash" : "momo";
+    const result = await startRoundPayout(await requireOrg(slug), field(form, "roundId"), method);
+    refresh();
+    if (result.status === "succeeded") return method === "cash" ? "Recorded as paid out in cash." : "Paid out.";
+    if (result.status === "failed") throw new AppError("validation", "The provider refused the payout. Check the number, then try again.");
+    return "message" in result && result.message ? result.message : "Sent. Waiting for the provider to confirm.";
+  });
+}
+
+export async function startRefundAction(slug: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const result = await startRefund(await requireOrg(slug), field(form, "contributionId"));
+    refresh();
+    return result.status === "succeeded" ? "Refunded." : "Refund sent. Waiting for the provider to confirm.";
+  });
+}
+
+export async function checkPayoutAction(slug: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const outcome = await checkPayout(await requireOrg(slug), field(form, "payoutId"));
+    refresh();
+    return PAYOUT_MESSAGES[outcome];
+  });
+}
+
+/** Development only: plays the provider finishing (or failing) a payout, and its webhook. */
+export async function simulatePayoutAction(slug: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const fake = getFakeProvider();
+    if (!fake) throw new AppError("forbidden", "Simulated payouts only work with the test provider.");
+    const ctx = await requireOrg(slug);
+    const { reference, amountPesewas } = await getPendingPayoutReference(ctx, field(form, "payoutId"));
+    fake.settlePayout(reference, field(form, "outcome") === "success" ? "success" : "failed", amountPesewas);
+    await processWebhook("fake", fake.webhookFor(reference, "payout"));
+    refresh();
+  });
+}
+
+export async function recordCashDepositAction(slug: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    await recordCashDeposit(await requireOrg(slug), { amount: field(form, "amount"), note: field(form, "note") });
+    refresh();
+    return "Recorded.";
+  });
+}
+
+export async function closeCycleAction(slug: string, _prev: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    await closeCycle(await requireOrg(slug), field(form, "cycleId"));
+    refresh();
+  });
+}
+
+export async function reconcileAction(slug: string): Promise<ActionState> {
+  return runAction(async () => {
+    const summary = await reconcile(await requireOrg(slug));
+    refresh();
+    return `${summary.checked} checked: ${summary.matched} matched, ${summary.fixed} fixed, ${summary.problems} ${summary.problems === 1 ? "problem" : "problems"}.`;
   });
 }

@@ -2,7 +2,7 @@ import type { Role } from "@/db/schema";
 import { AppError } from "./errors";
 
 // One map for every permission check. Roles in a susu group:
-//   collector  runs the group: sets the rules, the payout order, starts cycles
+//   collector  runs the group: sets the rules, the payout order, starts cycles, sends payouts
 //   treasurer  helps run it: invites members, records cash, reads the ledger, can't change the rules
 //   member     pays in, gets paid out, sees the group's progress
 export const PERMISSIONS = {
@@ -10,6 +10,9 @@ export const PERMISSIONS = {
   "cycles:manage": ["collector"],
   "contributions:record_cash": ["collector", "treasurer"],
   "ledger:read": ["collector", "treasurer"],
+  "payouts:send": ["collector"],
+  "cash:deposit": ["collector", "treasurer"],
+  "reconcile:run": ["collector", "treasurer"],
   "members:read": ["collector", "treasurer", "member"],
   "members:invite": ["collector", "treasurer"],
   "members:manage": ["collector", "treasurer"],

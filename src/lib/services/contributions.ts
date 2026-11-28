@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
-import { PesewaError, detectNetwork, normalizeGhanaPhone, type CollectRequest, type CollectResult, type Network, type Payment, type WebhookRequest } from "pesewa";
+import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import { PesewaError, detectNetwork, normalizeGhanaPhone, type CollectRequest, type CollectResult, type Network, type Payment } from "pesewa";
 import { getDb } from "@/db/client";
 import {
   contributions,
@@ -10,7 +10,6 @@ import {
   paymentReferences,
   rounds,
   users,
-  webhookEvents,
   type ContributionStatus,
 } from "@/db/schema";
 import { withTenant, type TenantDb } from "@/db/tenant";
@@ -114,7 +113,7 @@ function parsePhone(phone: string, network: string | undefined): { local: string
 }
 
 /** Loads a round of the running cycle and locks it, so payments into it are counted one at a time. */
-async function lockRound(db: TenantDb, roundId: string) {
+export async function lockRound(db: TenantDb, roundId: string) {
   const [row] = await db
     .select({ round: rounds, cycle: cycles })
     .from(rounds)
@@ -329,7 +328,7 @@ async function markIfWaiting(ctx: OrgContext, contributionId: string, status: Co
 
 // ---- Settling: webhooks and status checks ------------------------------------
 
-async function findOrganization(provider: string, reference: string) {
+export async function findOrganization(provider: string, reference: string) {
   const [row] = await getDb()
     .select({ id: organizations.id, schemaName: organizations.schemaName })
     .from(paymentReferences)
@@ -345,7 +344,7 @@ export async function settle(providerName: string, payment: Payment): Promise<Se
   return withTenant(org.schemaName, (db) => settleIn(db, org.id, providerName, payment));
 }
 
-async function settleIn(db: TenantDb, organizationId: string, providerName: string, payment: Payment): Promise<SettleOutcome> {
+export async function settleIn(db: TenantDb, organizationId: string, providerName: string, payment: Payment): Promise<SettleOutcome> {
   const [found] = await db
     .select()
     .from(contributions)
@@ -431,58 +430,6 @@ async function markRoundFullIfComplete(db: TenantDb, roundId: string, cycleId: s
   }
 }
 
-/**
- * Handles a provider's webhook: authenticate and confirm it (pesewa), record
- * the event once, and settle it, all in one transaction. If settling fails,
- * the event isn't recorded either, so the provider's retry gets another go.
- */
-export async function processWebhook(
-  providerName: string,
-  request: WebhookRequest,
-): Promise<{ status: 200 | 401 | 404; outcome: string }> {
-  let provider;
-  try {
-    provider = getProvider(providerName);
-  } catch {
-    return { status: 404, outcome: "unknown_provider" };
-  }
-
-  let payment: Payment | null;
-  try {
-    payment = await provider.handleWebhook(request);
-  } catch (error) {
-    if (error instanceof PesewaError && (error.code === "invalid_webhook" || error.code === "invalid_request")) {
-      return { status: 401, outcome: "rejected" };
-    }
-    if (error instanceof PesewaError && error.code === "not_found") return { status: 200, outcome: "unknown_reference" };
-    throw error; // provider unreachable: a 500 makes the provider retry later
-  }
-  if (!payment) return { status: 200, outcome: "ignored" };
-
-  const eventKey = `${payment.reference}:${payment.status}`;
-  const org = await findOrganization(provider.name, payment.reference);
-  if (!org) {
-    await getDb()
-      .insert(webhookEvents)
-      .values({ provider: provider.name, eventKey, reference: payment.reference, outcome: "unknown_reference" })
-      .onConflictDoNothing();
-    return { status: 200, outcome: "unknown_reference" };
-  }
-
-  const outcome = await withTenant(org.schemaName, async (db) => {
-    const [event] = await db
-      .insert(webhookEvents)
-      .values({ provider: provider.name, eventKey, reference: payment.reference, outcome: "processing" })
-      .onConflictDoNothing()
-      .returning({ id: webhookEvents.id });
-    if (!event) return "duplicate_event";
-    const result = await settleIn(db, org.id, provider.name, payment);
-    await db.update(webhookEvents).set({ outcome: result }).where(eq(webhookEvents.id, event.id));
-    return result;
-  });
-  return { status: 200, outcome };
-}
-
 // ---- Cash ------------------------------------------------------------------
 
 /** Records a contribution a member paid in cash. Collectors and treasurers only. */
@@ -532,26 +479,4 @@ export async function recordCashContribution(ctx: OrgContext, input: { roundId: 
     if (pgCode(error) === "23505") throw new AppError("conflict", "That member has already paid this round.");
     throw error;
   }
-}
-
-/** For the treasurer's view: refunds owed, newest first. */
-export async function listRefundsDue(ctx: OrgContext) {
-  assertCan(ctx.role, "ledger:read");
-  return withTenant(ctx.org.schemaName, (db) =>
-    db
-      .select({
-        id: contributions.id,
-        status: contributions.status,
-        receivedPesewas: contributions.receivedPesewas,
-        amountPesewas: contributions.amountPesewas,
-        userName: users.name,
-        roundNumber: rounds.number,
-        settledAt: contributions.settledAt,
-      })
-      .from(contributions)
-      .innerJoin(users, eq(users.id, contributions.userId))
-      .innerJoin(rounds, eq(rounds.id, contributions.roundId))
-      .where(inArray(contributions.status, ["duplicate", "mismatch"]))
-      .orderBy(desc(contributions.settledAt)),
-  );
 }
